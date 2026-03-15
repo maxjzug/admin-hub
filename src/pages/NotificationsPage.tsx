@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLang } from "@/contexts/LanguageContext";
+import { BackButton } from "@/components/layout/BackButton";
 
 interface Notification { id: string; title: string; message: string; is_read: boolean; is_global: boolean; created_at: string; }
 
