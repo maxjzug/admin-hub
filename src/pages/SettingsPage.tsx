@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLang } from "@/contexts/LanguageContext";
 import { useState } from "react";
+import { BackButton } from "@/components/layout/BackButton";
 
 export function SettingsPage() {
   const navigate = useNavigate();
