@@ -22,7 +22,7 @@ export function HomePage() {
   const handleGoogleSignIn = async () => {
     setAuthLoading(true);
     try {
-      const result = await backendAuth.auth.signInWithOAuth("google", {
+      const result = await lovable.auth.signInWithOAuth("google", {
         redirect_uri: window.location.origin + "/main",
       });
       if (result.error) {
