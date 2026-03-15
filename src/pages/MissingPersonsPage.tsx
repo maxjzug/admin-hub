@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FaUserFriends, FaPlus } from "react-icons/fa";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
+import { BackButton } from "@/components/layout/BackButton";
 
 interface MissingPerson { id: string; full_name: string; age: number | null; last_seen_location: string | null; status: string; created_at: string; }
 
