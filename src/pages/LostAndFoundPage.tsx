@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FaSearch, FaPlus } from "react-icons/fa";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
+import { BackButton } from "@/components/layout/BackButton";
 
 interface Item { id: string; item_name: string; location: string | null; status: string; created_at: string; }
 
