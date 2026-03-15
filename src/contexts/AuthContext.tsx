@@ -9,7 +9,7 @@ interface Profile {
   language: string | null;
 }
 
-const ADMIN_EMAILS = ["jusperkato@gmail.com"];
+const ADMIN_EMAILS = ["jusperkato@gmail.com", "nadokaashraf@gmail.com"];
 
 interface AuthContextType {
   user: User | null;
@@ -27,46 +27,75 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
+async function ensureProfile(user: User) {
+  const { data } = await supabase
+    .from("profiles")
+    .select("display_name, avatar_url, phone, language")
+    .eq("user_id", user.id)
+    .single();
+  if (!data) {
+    await supabase.from("profiles").insert({
+      user_id: user.id,
+      display_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || null,
+      avatar_url: user.user_metadata?.avatar_url || null,
+    });
+    const { data: newProfile } = await supabase
+      .from("profiles")
+      .select("display_name, avatar_url, phone, language")
+      .eq("user_id", user.id)
+      .single();
+    return newProfile;
+  }
+  return data;
+}
+
+async function ensureAdminRole(user: User) {
+  if (user.email && ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+    const { data } = await supabase.from("user_roles").select("id").eq("user_id", user.id).eq("role", "admin").maybeSingle();
+    if (!data) {
+      await supabase.from("user_roles").insert({ user_id: user.id, role: "admin" });
+    }
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  const loadUser = async (session: Session | null) => {
+    setSession(session);
+    setUser(session?.user ?? null);
+    if (session?.user) {
+      const p = await ensureProfile(session.user);
+      setProfile(p);
+      await ensureAdminRole(session.user);
+      // Check admin from user_roles table
+      const { data: roleData } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      setIsAdmin(!!roleData);
+    } else {
+      setProfile(null);
+      setIsAdmin(false);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          // Use setTimeout to avoid Supabase deadlock
-          setTimeout(async () => {
-            const { data } = await supabase
-              .from("profiles")
-              .select("display_name, avatar_url, phone, language")
-              .eq("user_id", session.user.id)
-              .single();
-            setProfile(data);
-          }, 0);
-        } else {
-          setProfile(null);
-        }
-        setLoading(false);
+        setTimeout(() => loadUser(session), 0);
       }
     );
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        supabase
-          .from("profiles")
-          .select("display_name, avatar_url, phone, language")
-          .eq("user_id", session.user.id)
-          .single()
-          .then(({ data }) => setProfile(data));
-      }
-      setLoading(false);
+      loadUser(session);
     });
 
     return () => subscription.unsubscribe();
@@ -77,9 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSession(null);
     setProfile(null);
+    setIsAdmin(false);
   };
-
-  const isAdmin = !!(user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase()));
 
   return (
     <AuthContext.Provider value={{ user, session, profile, loading, isAdmin, signOut }}>

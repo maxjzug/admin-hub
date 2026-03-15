@@ -1,5 +1,6 @@
 import { FaGavel, FaBook, FaBalanceScale } from "react-icons/fa";
 import { motion } from "framer-motion";
+import { BackButton } from "@/components/layout/BackButton";
 
 const LAWS = [
   { title: "Constitution of Uganda, 1995", desc: "Chapter 4 – Bill of Rights: Right to life, dignity, liberty, fair trial, legal representation.", icon: FaBalanceScale, color: "hsl(234, 85%, 65%)" },
@@ -14,6 +15,7 @@ const LAWS = [
 export function LawsAndRightsPage() {
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
+      <BackButton />
       <h1 className="text-xl font-bold text-foreground mb-1">Laws & Rights</h1>
       <p className="text-sm text-muted-foreground mb-6">Key Ugandan laws and your constitutional rights.</p>
 

@@ -1,14 +1,13 @@
 import { useState, useRef } from "react";
 import {
-  FaGavel, FaMapMarkerAlt, FaCalendarAlt, FaCamera,
-  FaFileAlt, FaExclamationTriangle, FaCrosshairs,
-  FaMicrophone, FaStop, FaPlay, FaTrash,
+  FaCrosshairs, FaMicrophone, FaStop, FaTrash, FaArrowLeft,
 } from "react-icons/fa";
 import { toast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLang } from "@/contexts/LanguageContext";
+import { BackButton } from "@/components/layout/BackButton";
 
 const CRIME_TYPES = [
   "Theft / Robbery", "Assault", "Fraud / Cybercrime", "Domestic Violence",
@@ -98,19 +97,21 @@ export function ReportCrimePage() {
     }
     setSubmitting(true);
     try {
+      const refNum = `RC-${Date.now().toString(36).toUpperCase()}`;
       const { error } = await supabase.from("crime_reports").insert({
         user_id: user.id,
         crime_type: crimeType,
+        category: crimeType,
         description,
         location,
         latitude,
         longitude,
         date_time: date ? new Date(date).toISOString() : null,
         audio_url: null,
-        reference_number: "TEMP",
+        reference_number: refNum,
       });
       if (error) throw error;
-      toast({ title: t("reportSubmitted"), description: "Your crime report has been submitted." });
+      toast({ title: t("reportSubmitted"), description: `Reference: ${refNum}` });
       setCrimeType(""); setLocation(""); setDate(""); setDescription("");
       setAudioBlob(null); setAudioUrl(null); setLatitude(null); setLongitude(null);
     } catch (err: any) {
@@ -121,6 +122,7 @@ export function ReportCrimePage() {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
+      <BackButton />
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-xl font-bold text-foreground mb-1">{t("reportCrime")}</h1>
         <p className="text-sm text-muted-foreground mb-6">Submit a crime or complaint report to Uganda Police Force.</p>
@@ -163,7 +165,6 @@ export function ReportCrimePage() {
               className="w-full p-3 rounded-xl border-2 border-primary/20 bg-card text-foreground text-sm focus:outline-none focus:border-primary transition-all resize-vertical mt-1" />
           </div>
 
-          {/* Voice Recording */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">{t("voiceRecording")}</label>
             <div className="flex gap-2">

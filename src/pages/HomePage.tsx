@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { FaShieldAlt, FaArrowRight, FaGavel, FaHandsHelping } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 import { useAuth } from "@/contexts/AuthContext";
-import { backendAuth } from "@/config/backendAuth";
+import { lovable } from "@/integrations/lovable/index";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useLang } from "@/contexts/LanguageContext";
@@ -22,7 +22,7 @@ export function HomePage() {
   const handleGoogleSignIn = async () => {
     setAuthLoading(true);
     try {
-      const result = await backendAuth.auth.signInWithOAuth("google", {
+      const result = await lovable.auth.signInWithOAuth("google", {
         redirect_uri: window.location.origin + "/main",
       });
       if (result.error) {

@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaShieldAlt, FaEnvelope, FaLock } from "react-icons/fa";
+import { FaShieldAlt, FaEnvelope, FaLock, FaArrowLeft } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
-import { backendAuth } from "@/config/backendAuth";
+import { lovable } from "@/integrations/lovable/index";
 import { toast } from "@/hooks/use-toast";
 import { useLang } from "@/contexts/LanguageContext";
 
@@ -19,7 +19,7 @@ export function AuthPage() {
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
-      const result = await backendAuth.auth.signInWithOAuth("google", {
+      const result = await lovable.auth.signInWithOAuth("google", {
         redirect_uri: window.location.origin + "/main",
       });
       if (result.error) {
@@ -60,20 +60,17 @@ export function AuthPage() {
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
       style={{ background: "var(--gradient-primary)" }}>
 
-      {/* Animated orbs */}
       <motion.div className="absolute top-20 left-10 w-40 h-40 rounded-full bg-white/5 blur-3xl"
         animate={{ x: [0, 30, 0], y: [0, -20, 0] }} transition={{ duration: 8, repeat: Infinity }} />
       <motion.div className="absolute bottom-20 right-10 w-60 h-60 rounded-full bg-white/5 blur-3xl"
         animate={{ x: [0, -20, 0], y: [0, 30, 0] }} transition={{ duration: 10, repeat: Infinity }} />
 
-      {/* Grid overlay */}
       <div className="absolute inset-0 opacity-[0.03]"
         style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
         className="relative z-10 w-full max-w-sm space-y-6">
 
-        {/* Logo */}
         <div className="flex flex-col items-center gap-3">
           <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center">
             <FaShieldAlt className="text-white text-3xl" />
@@ -82,7 +79,6 @@ export function AuthPage() {
           <p className="text-white/60 text-sm">{isSignUp ? t("createAccount") : t("welcomeBack")}</p>
         </div>
 
-        {/* Google */}
         <button onClick={handleGoogleSignIn} disabled={loading}
           className="w-full py-3.5 rounded-2xl bg-white text-gray-800 font-semibold flex items-center justify-center gap-2 hover:bg-white/90 transition-all disabled:opacity-50">
           <FcGoogle className="text-xl" />{t("continueWithGoogle")}
@@ -90,7 +86,6 @@ export function AuthPage() {
 
         <div className="text-center text-white/30 text-xs">OR</div>
 
-        {/* Email form */}
         <form onSubmit={handleEmailAuth} className="space-y-3">
           <div className="relative">
             <FaEnvelope className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
@@ -113,13 +108,13 @@ export function AuthPage() {
 
         <p className="text-white/50 text-xs text-center">
           {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
-          <button onClick={() => setIsSignUp(!isSignUp)} className="text-primary font-medium hover:underline">
+          <button onClick={() => setIsSignUp(!isSignUp)} className="text-white font-medium hover:underline">
             {isSignUp ? t("signIn") : t("createAccount")}
           </button>
         </p>
 
-        <button onClick={() => navigate("/home")} className="text-white/40 text-xs w-full text-center hover:text-white/50 transition-colors">
-          ← Back to home
+        <button onClick={() => navigate("/home")} className="text-white/40 text-xs w-full text-center hover:text-white/50 transition-colors flex items-center justify-center gap-1">
+          <FaArrowLeft className="text-[10px]" /> Back to home
         </button>
       </motion.div>
     </div>

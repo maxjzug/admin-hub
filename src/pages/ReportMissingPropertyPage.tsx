@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLang } from "@/contexts/LanguageContext";
+import { BackButton } from "@/components/layout/BackButton";
 
 export function ReportMissingPropertyPage() {
   const navigate = useNavigate();
@@ -44,6 +45,7 @@ export function ReportMissingPropertyPage() {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
+      <BackButton />
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-xl font-bold text-foreground mb-1">{t("reportMissingProperty")}</h1>
         <p className="text-sm text-muted-foreground mb-6">Report lost or stolen property.</p>

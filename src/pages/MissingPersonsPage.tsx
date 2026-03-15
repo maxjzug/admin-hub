@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FaUserFriends, FaPlus } from "react-icons/fa";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
+import { BackButton } from "@/components/layout/BackButton";
 
 interface MissingPerson { id: string; full_name: string; age: number | null; last_seen_location: string | null; status: string; created_at: string; }
 
@@ -26,6 +27,7 @@ export function MissingPersonsPage() {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
+      <BackButton />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-foreground">Missing Persons</h1>

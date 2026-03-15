@@ -6,6 +6,7 @@ import {
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLang } from "@/contexts/LanguageContext";
+import { BackButton } from "@/components/layout/BackButton";
 
 const KB: Record<string, { patterns: string[]; response: string }> = {
   emergency: {
@@ -82,6 +83,7 @@ export function GetHelpPage() {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
+      <BackButton />
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-xl font-bold text-foreground mb-1">{t("getHelp")}</h1>
         <p className="text-sm text-muted-foreground mb-6">Contact support, emergency services, or chat with our AI assistant.</p>
