@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -7,34 +7,78 @@ import { motion } from "framer-motion";
 import {
   FaUsers, FaUserShield, FaClipboardList, FaExclamationTriangle,
   FaCheckCircle, FaChartBar, FaMapMarkerAlt, FaBell, FaCog,
-  FaTachometerAlt, FaUserPlus, FaShieldAlt, FaToggleOn, FaToggleOff,
-  FaCrown, FaSync, FaTimes,
+  FaTachometerAlt, FaUserPlus, FaShieldAlt, FaSync, FaTimes,
+  FaDownload, FaEye, FaTrash, FaEnvelope, FaReply, FaCrown,
+  FaToggleOn, FaToggleOff, FaArrowLeft,
 } from "react-icons/fa";
 
 function formatNumber(val: number) {
   try { return val.toLocaleString(); } catch { return String(val); }
 }
 
+interface CrimeReport {
+  id: string;
+  category: string | null;
+  crime_type: string;
+  location: string | null;
+  status: string;
+  created_at: string;
+  user_id: string;
+  description: string;
+  date_time: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  reference_number: string | null;
+  audio_url: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+}
+
+interface UserProfile {
+  user_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  phone: string | null;
+  created_at: string;
+}
+
 export function AdminDashboardPage() {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
   const [stats, setStats] = useState({
-    totalUsers: 0, activeUsers: 0, pendingRequests: 0, resolvedRequests: 0,
+    totalUsers: 0, pendingRequests: 0, resolvedRequests: 0,
     totalAdmins: 0, totalReports: 0, rejectedRequests: 0, missingPersons: 0,
   });
-  const [recentReports, setRecentReports] = useState<any[]>([]);
-  const [recentUsers, setRecentUsers] = useState<any[]>([]);
+  const [recentReports, setRecentReports] = useState<CrimeReport[]>([]);
+  const [allReports, setAllReports] = useState<CrimeReport[]>([]);
+  const [recentUsers, setRecentUsers] = useState<UserProfile[]>([]);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Modals
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
+  const [showReportDetail, setShowReportDetail] = useState<CrimeReport | null>(null);
+  const [showAllReports, setShowAllReports] = useState(false);
+  const [showAllUsers, setShowAllUsers] = useState(false);
+  const [replyMessage, setReplyMessage] = useState("");
+
+  // Broadcast
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastMsg, setBroadcastMsg] = useState("");
   const [broadcastType, setBroadcastType] = useState("info");
+
+  // Add User
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<"user" | "admin">("user");
   const [addingUser, setAddingUser] = useState(false);
+
+  // Report filter
+  const [reportFilter, setReportFilter] = useState("all");
+
+  const channelRef = useRef<any>(null);
 
   const safeCount = async (query: any) => {
     try {
@@ -56,20 +100,24 @@ export function AdminDashboardPage() {
         safeCount(supabase.from("missing_persons").select("*", { count: "exact", head: true }).eq("status", "missing")),
       ]);
       setStats({
-        totalUsers: counts[0], activeUsers: counts[0], pendingRequests: counts[1],
+        totalUsers: counts[0], pendingRequests: counts[1],
         resolvedRequests: counts[2], rejectedRequests: counts[3], totalAdmins: counts[4],
         totalReports: counts[5], missingPersons: counts[6],
       });
 
       const { data: repData } = await supabase.from("crime_reports")
-        .select("id, category, location, status, created_at, user_id")
-        .order("created_at", { ascending: false }).limit(5);
-      setRecentReports(repData || []);
+        .select("*")
+        .order("created_at", { ascending: false });
+      const reports = (repData || []) as CrimeReport[];
+      setAllReports(reports);
+      setRecentReports(reports.slice(0, 5));
 
       const { data: userData } = await supabase.from("profiles")
-        .select("user_id, display_name, created_at")
-        .order("created_at", { ascending: false }).limit(5);
-      setRecentUsers(userData || []);
+        .select("user_id, display_name, avatar_url, phone, created_at")
+        .order("created_at", { ascending: false });
+      const users = (userData || []) as UserProfile[];
+      setAllUsers(users);
+      setRecentUsers(users.slice(0, 5));
     } catch (err) {
       console.error("Admin fetch error:", err);
     } finally {
@@ -80,14 +128,80 @@ export function AdminDashboardPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Realtime subscription
+  useEffect(() => {
+    if (channelRef.current) return;
+    const channel = supabase
+      .channel("admin-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "crime_reports" }, () => fetchData())
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "crime_reports" }, () => fetchData())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "profiles" }, () => fetchData())
+      .subscribe();
+    channelRef.current = channel;
+    return () => { if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; } };
+  }, [fetchData]);
+
   const handleRefresh = () => { setRefreshing(true); fetchData(); };
+
+  const handleUpdateStatus = async (reportId: string, status: string) => {
+    try {
+      await supabase.from("crime_reports").update({
+        status, reviewed_by: user?.id, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).eq("id", reportId);
+
+      // Notify the user
+      const report = allReports.find(r => r.id === reportId);
+      if (report) {
+        await supabase.from("notifications").insert({
+          user_id: report.user_id,
+          title: `Report ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+          message: `Your crime report (${report.crime_type}) has been ${status} by an administrator.`,
+          type: status === "resolved" ? "success" : status === "rejected" ? "warning" : "info",
+        });
+      }
+
+      toast({ title: `Report ${status}` });
+      setShowReportDetail(null);
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleReplyToUser = async (report: CrimeReport) => {
+    if (!replyMessage.trim()) return;
+    try {
+      await supabase.from("notifications").insert({
+        user_id: report.user_id,
+        title: `Response to your report`,
+        message: replyMessage,
+        type: "info",
+      });
+      toast({ title: "Reply sent to user" });
+      setReplyMessage("");
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleDeleteReport = async (reportId: string) => {
+    if (!confirm("Delete this report permanently?")) return;
+    try {
+      await supabase.from("crime_reports").delete().eq("id", reportId);
+      toast({ title: "Report deleted" });
+      setShowReportDetail(null);
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
 
   const handleBroadcast = async () => {
     if (!broadcastTitle.trim() || !broadcastMsg.trim()) return;
     try {
       const { data: users } = await supabase.from("profiles").select("user_id");
       if (!users?.length) { toast({ title: "No users found", variant: "destructive" }); return; }
-      const rows = users.map((u: any) => ({ user_id: u.user_id, title: broadcastTitle, message: broadcastMsg, type: broadcastType }));
+      const rows = users.map((u: any) => ({ user_id: u.user_id, title: broadcastTitle, message: broadcastMsg, type: broadcastType, is_global: true }));
       await supabase.from("notifications").insert(rows);
       toast({ title: `Notification sent to ${rows.length} user(s)!` });
       setShowBroadcast(false);
@@ -101,9 +215,7 @@ export function AdminDashboardPage() {
     if (!newUserEmail || !newUserPassword) return;
     setAddingUser(true);
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: newUserEmail, password: newUserPassword,
-      });
+      const { data, error } = await supabase.auth.signUp({ email: newUserEmail, password: newUserPassword });
       if (error) throw error;
       if (newUserRole === "admin" && data.user) {
         await supabase.from("user_roles").insert({ user_id: data.user.id, role: "admin" });
@@ -118,19 +230,29 @@ export function AdminDashboardPage() {
     setAddingUser(false);
   };
 
-  const handleQuickApprove = async (reportId: string) => {
-    try {
-      await supabase.from("crime_reports").update({
-        status: "resolved", reviewed_by: user?.id, reviewed_at: new Date().toISOString(),
-      }).eq("id", reportId);
-      toast({ title: "Report approved" });
-      fetchData();
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    }
+  const handleDownloadReports = () => {
+    const csvHeaders = "ID,Type,Category,Location,Status,Date,Description,User ID\n";
+    const csvRows = allReports.map(r =>
+      `"${r.id}","${r.crime_type}","${r.category || ''}","${r.location || ''}","${r.status}","${r.created_at}","${r.description.replace(/"/g, '""')}","${r.user_id}"`
+    ).join("\n");
+    const blob = new Blob([csvHeaders + csvRows], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `crime_reports_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Reports downloaded as CSV" });
   };
 
   const resolveRate = stats.totalReports > 0 ? Math.round((stats.resolvedRequests / stats.totalReports) * 100) : 0;
+
+  const filteredReports = reportFilter === "all" ? allReports : allReports.filter(r => r.status === reportFilter);
+
+  const getUserName = (userId: string) => {
+    const u = allUsers.find(u => u.user_id === userId);
+    return u?.display_name || userId.slice(0, 8) + "...";
+  };
 
   if (loading) {
     return (
@@ -151,19 +273,93 @@ export function AdminDashboardPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
+      {/* Report Detail Modal */}
+      {showReportDetail && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-lg space-y-4 my-8">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-foreground flex items-center gap-2"><FaEye className="text-primary" /> Report Details</h2>
+              <button onClick={() => setShowReportDetail(null)} className="text-muted-foreground hover:text-foreground"><FaTimes /></button>
+            </div>
+            <div className="space-y-2 text-sm">
+              <div className="grid grid-cols-2 gap-2">
+                <div><span className="text-muted-foreground">Type:</span> <span className="font-medium text-foreground">{showReportDetail.crime_type}</span></div>
+                <div><span className="text-muted-foreground">Status:</span>
+                  <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                    showReportDetail.status === "pending" ? "bg-yellow-100 text-yellow-700" :
+                    showReportDetail.status === "resolved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                  }`}>{showReportDetail.status}</span>
+                </div>
+                <div><span className="text-muted-foreground">Location:</span> <span className="text-foreground">{showReportDetail.location || "N/A"}</span></div>
+                <div><span className="text-muted-foreground">Date:</span> <span className="text-foreground">{showReportDetail.date_time ? new Date(showReportDetail.date_time).toLocaleString() : "N/A"}</span></div>
+                <div><span className="text-muted-foreground">Ref:</span> <span className="text-foreground">{showReportDetail.reference_number || "N/A"}</span></div>
+                <div><span className="text-muted-foreground">Reporter:</span> <span className="text-foreground">{getUserName(showReportDetail.user_id)}</span></div>
+              </div>
+              {showReportDetail.latitude && showReportDetail.longitude && (
+                <div><span className="text-muted-foreground">Coordinates:</span> <span className="text-foreground">{showReportDetail.latitude.toFixed(4)}, {showReportDetail.longitude.toFixed(4)}</span></div>
+              )}
+              <div>
+                <span className="text-muted-foreground">Description:</span>
+                <p className="mt-1 p-3 rounded-xl bg-muted text-foreground text-xs">{showReportDetail.description}</p>
+              </div>
+              <div><span className="text-muted-foreground">Submitted:</span> <span className="text-foreground">{new Date(showReportDetail.created_at).toLocaleString()}</span></div>
+            </div>
+
+            {/* Reply to user */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-muted-foreground">Reply to reporter:</label>
+              <div className="flex gap-2">
+                <input value={replyMessage} onChange={e => setReplyMessage(e.target.value)} placeholder="Type a message..."
+                  className="flex-1 p-2.5 rounded-xl border border-border bg-background text-foreground text-sm" />
+                <button onClick={() => handleReplyToUser(showReportDetail)}
+                  className="px-3 py-2.5 rounded-xl text-primary-foreground text-sm font-medium" style={{ background: "var(--gradient-primary)" }}>
+                  <FaReply />
+                </button>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-wrap gap-2">
+              {showReportDetail.status === "pending" && (
+                <>
+                  <button onClick={() => handleUpdateStatus(showReportDetail.id, "resolved")}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-green-100 text-green-700 hover:bg-green-200 transition-all">
+                    ✓ Resolve
+                  </button>
+                  <button onClick={() => handleUpdateStatus(showReportDetail.id, "rejected")}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-100 text-red-700 hover:bg-red-200 transition-all">
+                    ✗ Reject
+                  </button>
+                </>
+              )}
+              {showReportDetail.status !== "pending" && (
+                <button onClick={() => handleUpdateStatus(showReportDetail.id, "pending")}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-yellow-100 text-yellow-700 hover:bg-yellow-200 transition-all">
+                  ↩ Reopen
+                </button>
+              )}
+              <button onClick={() => handleDeleteReport(showReportDetail.id)}
+                className="py-2.5 px-4 rounded-xl text-sm font-semibold bg-destructive/10 text-destructive hover:bg-destructive/20 transition-all">
+                <FaTrash />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Broadcast Modal */}
       {showBroadcast && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-card rounded-2xl p-6 w-full max-w-md space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="font-bold text-foreground">Broadcast Notification</h2>
+              <h2 className="font-bold text-foreground flex items-center gap-2"><FaBell className="text-primary" /> Broadcast Notification</h2>
               <button onClick={() => setShowBroadcast(false)}><FaTimes /></button>
             </div>
-            <input value={broadcastTitle} onChange={(e) => setBroadcastTitle(e.target.value)} placeholder="Title"
+            <input value={broadcastTitle} onChange={e => setBroadcastTitle(e.target.value)} placeholder="Title"
               className="w-full p-3 rounded-xl border border-border bg-background text-foreground text-sm" />
-            <textarea value={broadcastMsg} onChange={(e) => setBroadcastMsg(e.target.value)} placeholder="Message" rows={3}
+            <textarea value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)} placeholder="Message" rows={3}
               className="w-full p-3 rounded-xl border border-border bg-background text-foreground text-sm" />
-            <select value={broadcastType} onChange={(e) => setBroadcastType(e.target.value)}
+            <select value={broadcastType} onChange={e => setBroadcastType(e.target.value)}
               className="w-full p-3 rounded-xl border border-border bg-background text-foreground text-sm">
               <option value="info">Info</option><option value="success">Success</option>
               <option value="warning">Warning</option><option value="alert">Alert</option>
@@ -179,14 +375,14 @@ export function AdminDashboardPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-card rounded-2xl p-6 w-full max-w-md space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="font-bold text-foreground">Add User / Admin</h2>
+              <h2 className="font-bold text-foreground flex items-center gap-2"><FaUserPlus className="text-primary" /> Add User / Admin</h2>
               <button onClick={() => setShowAddUser(false)}><FaTimes /></button>
             </div>
-            <input type="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} placeholder="Email"
+            <input type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} placeholder="Email"
               className="w-full p-3 rounded-xl border border-border bg-background text-foreground text-sm" />
-            <input type="password" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} placeholder="Password"
+            <input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Password"
               className="w-full p-3 rounded-xl border border-border bg-background text-foreground text-sm" />
-            <select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as any)}
+            <select value={newUserRole} onChange={e => setNewUserRole(e.target.value as any)}
               className="w-full p-3 rounded-xl border border-border bg-background text-foreground text-sm">
               <option value="user">Regular User</option><option value="admin">Admin</option>
             </select>
@@ -199,21 +395,88 @@ export function AdminDashboardPage() {
         </div>
       )}
 
+      {/* All Reports View */}
+      {showAllReports && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between sticky top-0 bg-card pb-3">
+              <h2 className="font-bold text-foreground">All Crime Reports ({filteredReports.length})</h2>
+              <div className="flex gap-2 items-center">
+                <select value={reportFilter} onChange={e => setReportFilter(e.target.value)}
+                  className="p-2 rounded-lg border border-border bg-background text-foreground text-xs">
+                  <option value="all">All</option><option value="pending">Pending</option>
+                  <option value="resolved">Resolved</option><option value="rejected">Rejected</option>
+                </select>
+                <button onClick={handleDownloadReports} className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20"><FaDownload /></button>
+                <button onClick={() => setShowAllReports(false)}><FaTimes /></button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {filteredReports.map(r => (
+                <div key={r.id} className="flex items-center justify-between p-3 rounded-xl bg-muted/50 hover:bg-muted transition-all">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-foreground">{r.crime_type} — {r.category || "Uncategorized"}</p>
+                    <p className="text-[10px] text-muted-foreground">📍 {r.location || "N/A"} • {getUserName(r.user_id)} • {new Date(r.created_at).toLocaleDateString()}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                      r.status === "pending" ? "bg-yellow-100 text-yellow-700" :
+                      r.status === "resolved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                    }`}>{r.status}</span>
+                    <button onClick={() => { setShowAllReports(false); setShowReportDetail(r); }}
+                      className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-xs"><FaEye /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* All Users View */}
+      {showAllUsers && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between sticky top-0 bg-card pb-3">
+              <h2 className="font-bold text-foreground">All Users ({allUsers.length})</h2>
+              <button onClick={() => setShowAllUsers(false)}><FaTimes /></button>
+            </div>
+            <div className="space-y-2">
+              {allUsers.map(u => (
+                <div key={u.user_id} className="flex items-center gap-3 p-3 rounded-xl bg-muted/50">
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold shrink-0"
+                    style={{ background: "var(--gradient-primary)" }}>
+                    {u.display_name?.[0]?.toUpperCase() || "U"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-foreground truncate">{u.display_name || "Unknown"}</p>
+                    <p className="text-[10px] text-muted-foreground">{u.phone || "No phone"} • Joined {new Date(u.created_at).toLocaleDateString()}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-all">
+          <FaArrowLeft className="text-sm" />
+        </button>
+        <div className="flex-1">
           <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
             <FaTachometerAlt className="text-primary" /> Admin Dashboard
-            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-semibold">Super Admin</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-semibold">
+              <FaCrown className="inline mr-1 text-[10px]" />Super Admin
+            </span>
           </h1>
           <p className="text-sm text-muted-foreground">Full control over users, reports, and system operations.</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={handleRefresh}
-            className="px-3 py-2 rounded-xl bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 transition-all flex items-center gap-1">
-            <FaSync className={refreshing ? "animate-spin" : ""} /> {refreshing ? "..." : "Refresh"}
-          </button>
-        </div>
+        <button onClick={handleRefresh}
+          className="px-3 py-2 rounded-xl bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 transition-all flex items-center gap-1">
+          <FaSync className={refreshing ? "animate-spin" : ""} /> {refreshing ? "..." : "Refresh"}
+        </button>
       </div>
 
       {/* Stats Grid */}
@@ -255,8 +518,12 @@ export function AdminDashboardPage() {
           {[
             { icon: FaUserPlus, label: "Add User/Admin", color: "hsl(142, 71%, 45%)", action: () => setShowAddUser(true) },
             { icon: FaBell, label: "Broadcast", color: "hsl(330, 81%, 60%)", action: () => setShowBroadcast(true) },
-            { icon: FaMapMarkerAlt, label: "Search Stations", color: "hsl(263, 70%, 50%)", action: () => navigate("/search-stations") },
-            { icon: FaCog, label: "Settings", color: "hsl(192, 91%, 36%)", action: () => navigate("/settings") },
+            { icon: FaDownload, label: "Download Reports", color: "hsl(38, 92%, 50%)", action: handleDownloadReports },
+            { icon: FaClipboardList, label: "All Reports", color: "hsl(263, 70%, 50%)", action: () => setShowAllReports(true) },
+            { icon: FaUsers, label: "All Users", color: "hsl(234, 85%, 58%)", action: () => setShowAllUsers(true) },
+            { icon: FaMapMarkerAlt, label: "Search Stations", color: "hsl(192, 91%, 36%)", action: () => navigate("/search-stations") },
+            { icon: FaCog, label: "Settings", color: "hsl(0, 84%, 60%)", action: () => navigate("/settings") },
+            { icon: FaExclamationTriangle, label: "Missing Persons", color: "hsl(25, 95%, 53%)", action: () => navigate("/missing-persons") },
           ].map((item, i) => {
             const Icon = item.icon;
             return (
@@ -274,28 +541,27 @@ export function AdminDashboardPage() {
       {/* Recent Reports & Users */}
       <div className="grid md:grid-cols-2 gap-4">
         <div className="rounded-2xl bg-card border border-border/50 p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-3">📋 Recent Reports</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-foreground">📋 Recent Reports</h3>
+            <button onClick={() => setShowAllReports(true)} className="text-xs text-primary font-semibold hover:underline">View all →</button>
+          </div>
           {recentReports.length === 0 ? (
             <p className="text-xs text-muted-foreground">No reports yet.</p>
           ) : (
             <div className="space-y-2">
-              {recentReports.map((r: any) => (
-                <div key={r.id} className="flex items-center justify-between p-2 rounded-xl bg-muted/50">
+              {recentReports.map((r) => (
+                <div key={r.id} className="flex items-center justify-between p-2 rounded-xl bg-muted/50 cursor-pointer hover:bg-muted transition-all"
+                  onClick={() => setShowReportDetail(r)}>
                   <div>
-                    <p className="text-xs font-medium text-foreground">{r.category || "Unknown"}</p>
-                    <p className="text-[10px] text-muted-foreground">📍 {r.location || "N/A"}</p>
+                    <p className="text-xs font-medium text-foreground">{r.crime_type}</p>
+                    <p className="text-[10px] text-muted-foreground">📍 {r.location || "N/A"} • {getUserName(r.user_id)}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
                       r.status === "pending" ? "bg-yellow-100 text-yellow-700" :
                       r.status === "resolved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
                     }`}>{r.status}</span>
-                    {r.status === "pending" && (
-                      <button onClick={() => handleQuickApprove(r.id)}
-                        className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold hover:bg-green-200">
-                        ✓ Approve
-                      </button>
-                    )}
+                    <FaEye className="text-xs text-muted-foreground" />
                   </div>
                 </div>
               ))}
@@ -304,12 +570,15 @@ export function AdminDashboardPage() {
         </div>
 
         <div className="rounded-2xl bg-card border border-border/50 p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-3">👤 Recent Users</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-foreground">👤 Recent Users</h3>
+            <button onClick={() => setShowAllUsers(true)} className="text-xs text-primary font-semibold hover:underline">View all →</button>
+          </div>
           {recentUsers.length === 0 ? (
             <p className="text-xs text-muted-foreground">No users yet.</p>
           ) : (
             <div className="space-y-2">
-              {recentUsers.map((u: any) => (
+              {recentUsers.map((u) => (
                 <div key={u.user_id} className="flex items-center gap-3 p-2 rounded-xl bg-muted/50">
                   <div className="w-8 h-8 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
                     style={{ background: "var(--gradient-primary)" }}>
