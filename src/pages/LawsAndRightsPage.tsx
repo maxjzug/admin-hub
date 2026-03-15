@@ -15,6 +15,7 @@ const LAWS = [
 export function LawsAndRightsPage() {
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
+      <BackButton />
       <h1 className="text-xl font-bold text-foreground mb-1">Laws & Rights</h1>
       <p className="text-sm text-muted-foreground mb-6">Key Ugandan laws and your constitutional rights.</p>
 

@@ -21,6 +21,7 @@ export function SettingsPage() {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
+      <BackButton />
       {user && (
         <button onClick={() => navigate("/auth")}
           className="w-full mb-6 p-4 rounded-2xl bg-card border border-border/50 flex items-center gap-4 hover:shadow-md transition-all text-left">

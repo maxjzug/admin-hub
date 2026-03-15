@@ -40,6 +40,7 @@ export function NotificationsPage() {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
+      <BackButton />
       <h1 className="text-xl font-bold text-foreground mb-1">{t("notifications")}</h1>
       <p className="text-sm text-muted-foreground mb-6">Stay updated on your reports and alerts.</p>
 
