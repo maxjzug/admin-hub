@@ -6,6 +6,7 @@ import {
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLang } from "@/contexts/LanguageContext";
+import { BackButton } from "@/components/layout/BackButton";
 
 const KB: Record<string, { patterns: string[]; response: string }> = {
   emergency: {
