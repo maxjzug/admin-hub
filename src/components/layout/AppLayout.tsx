@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { BottomNav } from "./BottomNav";
+import { WhatsAppButton } from "./WhatsAppButton";
 
 export function AppLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -17,6 +18,7 @@ export function AppLayout() {
       </main>
 
       <BottomNav />
+      <WhatsAppButton />
 
       {/* Footer - desktop only */}
       <footer className="hidden md:block text-center py-4 text-xs text-muted-foreground border-t border-border/30">
